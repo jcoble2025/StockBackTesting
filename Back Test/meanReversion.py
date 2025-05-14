@@ -10,6 +10,9 @@ data.loc[data['MA_10'] > data['MA_100'], 'Signal'] = 1
 data.loc[data['MA_10'] < data['MA_100'], 'Signal'] = -1
 print(data[['date', 'close', 'MA_10', 'MA_100', 'Signal']])
 
+
+
+# Calculate daily returns and strategy returns
 data['Daily_Return'] = data['close'].pct_change()
 data['Strategy_Return'] = data['Signal'].shift(1) * data['Daily_Return']
 data['Cumulative_Profit'] = (1 + data['Strategy_Return']).cumprod()
