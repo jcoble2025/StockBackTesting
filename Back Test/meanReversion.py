@@ -42,21 +42,26 @@ within_volume_range = (temp_data['volume'] >= temp_data['Vol_Lower_Bound']) & (t
 temp_data.loc[(temp_data[f'MA_{short_window}'] > temp_data[f'MA_{long_window}']) & within_volume_range, 'Signal'] = 1
 temp_data.loc[(temp_data[f'MA_{short_window}'] < temp_data[f'MA_{long_window}']) & within_volume_range, 'Signal'] = -1
 
-# Position sizing and holdings
+# --- Aggressive Sizing: Use leverage or a higher fraction of cash ---
+leverage = 1.0  # 1.0 = no leverage, 2.0 = 2x leverage, etc.
+
+# Define what percentage of liquidity (cash) to invest per trade (e.g., 1.0 = 100%, 0.5 = 50%)
+liquidity_pct = 1.0  # Change this value as desired
+
 initial_cash = 1_000_000
 cash = initial_cash
 position = 0  # Number of shares held
 temp_data['Position'] = 0
 temp_data['Holdings'] = 0.0
-temp_data['Cash'] = initial_cash
-temp_data['Total_Equity'] = initial_cash
+temp_data['Cash'] = float(initial_cash)
+temp_data['Total_Equity'] = float(initial_cash)
 
 for i, row in temp_data.iterrows():
     if i == 0:
         temp_data.at[i, 'Position'] = 0
         temp_data.at[i, 'Holdings'] = 0.0
-        temp_data.at[i, 'Cash'] = initial_cash
-        temp_data.at[i, 'Total_Equity'] = initial_cash
+        temp_data.at[i, 'Cash'] = float(initial_cash)
+        temp_data.at[i, 'Total_Equity'] = float(initial_cash)
         continue
 
     prev_position = temp_data.at[i-1, 'Position']
@@ -64,9 +69,10 @@ for i, row in temp_data.iterrows():
     price = row['close']
     signal = row['Signal']
 
-    # Buy signal: go all-in if not already in position
+    # Buy signal: invest a percentage of liquidity with leverage if not already in position
     if signal == 1 and prev_position == 0:
-        shares_to_buy = prev_cash // price
+        buying_power = prev_cash * leverage * liquidity_pct
+        shares_to_buy = int(buying_power // price)
         cost = shares_to_buy * price
         position = shares_to_buy
         cash = prev_cash - cost
