@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 # Read CSV, parse dates, and sort by date to ensure correct order
-data = pd.read_csv('/Users/jacksoncoble/StockBackTesting/Back Test/MELI_5min.csv', parse_dates=['date'])
+data = pd.read_csv('/Users/jacksoncoble/StockBackTesting-3/Back Test/MELI_5min.csv', parse_dates=['date'])
 data = data.sort_values('date').reset_index(drop=True)
 
 # Check for required columns
@@ -23,7 +23,7 @@ for long_window in range(100, 1001, 100):
     print(f"\nTesting MA combination: MA_10 vs MA_{long_window}")
     
     # Calculate moving averages
-    data['MA_10'] = data['close'].rolling(window=10).mean()
+    data['MA_10'] = data['close'].rolling(window=30).mean()
     data[f'MA_{long_window}'] = data['close'].rolling(window=long_window).mean()
     
     # Calculate 24-hour volume metrics (288 = 12 5-min bars per hour * 24 hours)
