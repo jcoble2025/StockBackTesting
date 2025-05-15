@@ -2,7 +2,7 @@ import pandas as pd
 import os
 
 # Read CSV, parse dates, and sort by date to ensure correct order
-data = pd.read_csv('/Users/jacksoncoble/StockBackTesting-3/Back Test/MELI_5min.csv', parse_dates=['date'])
+data = pd.read_csv('/Users/jacksoncoble/StockBackTesting-3/Back Test/TSLA_5min.csv', parse_dates=['date'])
 data = data.sort_values('date').reset_index(drop=True)
 
 # Check for required columns
@@ -13,62 +13,116 @@ if not required_cols.issubset(data.columns):
 # Save the original close prices for buy and hold calculation
 original_close = data['close'].copy()
 
+# Set moving average windows
+short_window = 25
+long_window = 600
+
 # Define separate volume thresholds for above and below average
-volume_threshold_below = .88  # 25% below average
-volume_threshold_above = 500  # 50% above average
+volume_threshold_below = 0.88  # 88% below average
+volume_threshold_above = 5.00  # 500% above average
 
-# Test different long-term MA windows
-results = []
-for long_window in range(100, 1001, 100):
-    print(f"\nTesting MA combination: MA_10 vs MA_{long_window}")
-    
-    # Calculate moving averages
-    data['MA_10'] = data['close'].rolling(window=30).mean()
-    data[f'MA_{long_window}'] = data['close'].rolling(window=long_window).mean()
-    
-    # Calculate 24-hour volume metrics (288 = 12 5-min bars per hour * 24 hours)
-    data['Avg_Vol_24h'] = data['volume'].rolling(window=288).mean()
-    data['Vol_Lower_Bound'] = data['Avg_Vol_24h'] * (1 - volume_threshold_below)
-    data['Vol_Upper_Bound'] = data['Avg_Vol_24h'] * (1 + volume_threshold_above)
-    
-    # Drop rows with NaN
-    temp_data = data.dropna(subset=['MA_10', f'MA_{long_window}', 'Avg_Vol_24h', 'Vol_Lower_Bound', 'Vol_Upper_Bound']).copy()
-    
-    # Signal logic
-    temp_data['Signal'] = 0
-    within_volume_range = (temp_data['volume'] >= temp_data['Vol_Lower_Bound']) & (temp_data['volume'] <= temp_data['Vol_Upper_Bound'])
-    temp_data.loc[(temp_data['MA_10'] > temp_data[f'MA_{long_window}']) & within_volume_range, 'Signal'] = 1
-    temp_data.loc[(temp_data['MA_10'] < temp_data[f'MA_{long_window}']) & within_volume_range, 'Signal'] = -1
-    
-    # Calculate returns
-    temp_data['Daily_Return'] = temp_data['close'].pct_change()
-    temp_data['Strategy_Return'] = temp_data['Signal'].shift(1) * temp_data['Daily_Return']
-    temp_data['Cumulative_Profit'] = (1 + temp_data['Strategy_Return'].fillna(0)).cumprod()
-    
-    if not temp_data.empty:
-        final_profit = temp_data['Cumulative_Profit'].iloc[-1] - 1
-        results.append({
-            'Long_Window': long_window,
-            'Profit': final_profit * 100
-        })
-        print(f"MA_{long_window} Strategy Profit: {final_profit * 100:.2f}%")
+print(f"\nTesting MA combination: MA_{short_window} vs MA_{long_window}")
 
-# Print summary of results
-print("\nStrategy Results Summary:")
-print("=" * 50)
-print("Moving Average Window | Profit (%)")
-print("-" * 50)
+# Calculate moving averages
+data[f'MA_{short_window}'] = data['close'].rolling(window=short_window).mean()
+data[f'MA_{long_window}'] = data['close'].rolling(window=long_window).mean()
 
-# Convert results to DataFrame and sort by Long_Window
-results_df = pd.DataFrame(results)
-results_df['Long_Window'] = results_df['Long_Window'].astype(int)
-results_df = results_df.sort_values('Long_Window')
+# Calculate 24-hour volume metrics (288 = 12 5-min bars per hour * 24 hours)
+data['Avg_Vol_24h'] = data['volume'].rolling(window=288).mean()
+data['Vol_Lower_Bound'] = data['Avg_Vol_24h'] * (1 - volume_threshold_below)
+data['Vol_Upper_Bound'] = data['Avg_Vol_24h'] * (1 + volume_threshold_above)
 
-# Print formatted results
-for _, row in results_df.iterrows():
-    print(f"MA_{int(row['Long_Window']):4d}           | {row['Profit']:8.2f}%")
-print("=" * 50)
+# Drop rows with NaN and reset index for safe integer indexing
+temp_data = data.dropna(subset=[f'MA_{short_window}', f'MA_{long_window}', 'Avg_Vol_24h', 'Vol_Lower_Bound', 'Vol_Upper_Bound']).copy()
+temp_data = temp_data.reset_index(drop=True)
+
+# Signal logic
+temp_data['Signal'] = 0
+within_volume_range = (temp_data['volume'] >= temp_data['Vol_Lower_Bound']) & (temp_data['volume'] <= temp_data['Vol_Upper_Bound'])
+temp_data.loc[(temp_data[f'MA_{short_window}'] > temp_data[f'MA_{long_window}']) & within_volume_range, 'Signal'] = 1
+temp_data.loc[(temp_data[f'MA_{short_window}'] < temp_data[f'MA_{long_window}']) & within_volume_range, 'Signal'] = -1
+
+# Position sizing and holdings
+initial_cash = 1_000_000
+cash = initial_cash
+position = 0  # Number of shares held
+temp_data['Position'] = 0
+temp_data['Holdings'] = 0.0
+temp_data['Cash'] = initial_cash
+temp_data['Total_Equity'] = initial_cash
+
+for i, row in temp_data.iterrows():
+    if i == 0:
+        temp_data.at[i, 'Position'] = 0
+        temp_data.at[i, 'Holdings'] = 0.0
+        temp_data.at[i, 'Cash'] = initial_cash
+        temp_data.at[i, 'Total_Equity'] = initial_cash
+        continue
+
+    prev_position = temp_data.at[i-1, 'Position']
+    prev_cash = temp_data.at[i-1, 'Cash']
+    price = row['close']
+    signal = row['Signal']
+
+    # Buy signal: go all-in if not already in position
+    if signal == 1 and prev_position == 0:
+        shares_to_buy = prev_cash // price
+        cost = shares_to_buy * price
+        position = shares_to_buy
+        cash = prev_cash - cost
+    # Sell signal: close position if in position
+    elif signal == -1 and prev_position > 0:
+        cash = prev_cash + prev_position * price
+        position = 0
+    else:
+        position = prev_position
+        cash = prev_cash
+
+    holdings = position * price
+    total_equity = cash + holdings
+
+    temp_data.at[i, 'Position'] = position
+    temp_data.at[i, 'Holdings'] = holdings
+    temp_data.at[i, 'Cash'] = cash
+    temp_data.at[i, 'Total_Equity'] = total_equity
+
+# Calculate returns
+temp_data['Daily_Return'] = temp_data['close'].pct_change()
+temp_data['Strategy_Return'] = temp_data['Signal'].shift(1) * temp_data['Daily_Return']
+temp_data['Cumulative_Profit'] = (1 + temp_data['Strategy_Return'].fillna(0)).cumprod()
+
+# Log all trades to CSV with P&L, position size, and holdings
+trades = temp_data[temp_data['Signal'] != 0][['date', 'close', 'volume', 'Signal', 'Position', 'Holdings', 'Cash', 'Total_Equity']].copy()
+trades['Trade_Type'] = trades['Signal'].map({1: 'Buy', -1: 'Sell'})
+trades['PnL'] = 0.0
+last_entry_price = None
+last_entry_type = None
+last_shares = 0
+
+for i, row in trades.iterrows():
+    if row['Trade_Type'] == 'Buy':
+        last_entry_price = row['close']
+        last_entry_type = 'Buy'
+        last_shares = row['Position']
+        trades.at[i, 'PnL'] = 0.0  # No PnL on entry
+    elif row['Trade_Type'] == 'Sell' and last_entry_type == 'Buy' and last_entry_price is not None:
+        trades.at[i, 'PnL'] = (row['close'] - last_entry_price) * last_shares
+        last_entry_price = None
+        last_entry_type = None
+        last_shares = 0
+    elif row['Trade_Type'] == 'Sell':
+        trades.at[i, 'PnL'] = 0.0  # No shorting logic here
+
+trades.to_csv('/Users/jacksoncoble/StockBackTesting-3/Back Test/trade_log.csv', index=False)
+print(f"Trade log saved to trade_log.csv with {len(trades)} trades.")
+
+# Print summary
+if not temp_data.empty:
+    final_profit = temp_data['Total_Equity'].iloc[-1] - initial_cash
+    print(f"Final Equity: ${temp_data['Total_Equity'].iloc[-1]:,.2f}")
+    print(f"Total Profit: ${final_profit:,.2f} ({final_profit/initial_cash*100:.2f}%)")
 
 # Calculate and display buy-and-hold profit
 buy_and_hold_profit = (original_close.iloc[-1] / original_close.iloc[0]) - 1
-print(f"\nBuy and Hold Strategy | {buy_and_hold_profit * 100:8.2f}%")
+print(f"Buy and Hold Strategy: {buy_and_hold_profit * 100:8.2f}%")
+print(f"I am better by {((temp_data['Total_Equity'].iloc[-1] / initial_cash - 1 - buy_and_hold_profit) * 100):8.2f}%")
