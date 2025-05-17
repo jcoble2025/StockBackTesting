@@ -46,7 +46,7 @@ temp_data.loc[(temp_data[f'MA_{short_window}'] < temp_data[f'MA_{long_window}'])
 leverage = 1.0  # 1.0 = no leverage, 2.0 = 2x leverage, etc.
 
 # Define what percentage of liquidity (cash) to invest per trade (e.g., 1.0 = 100%, 0.5 = 50%)
-liquidity_pct = 1.0  # Change this value as desired
+liquidity_pct = 2.0  # Change this value as desired
 
 initial_cash = 1_000_000
 cash = initial_cash

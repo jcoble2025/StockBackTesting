@@ -1,5 +1,5 @@
-1. Establish a "safe zone" of volume in which liquidity is favorable
-2. Create parameters for different situation (i.e. break highs, break lows, and everything in between)
-3. quantify news releases
-4. create a 30 day min and max column
-5. establish weighting
+1. Establish a "safe zone" of volume in which liquidity is favorable - Done
+2. Create parameters for different situation (i.e. break highs, break lows, and everything in between) - Done
+3. quantify news releases - Done just need to read it
+4. create a 30 day min and max column - done and tweaked
+5. establish weighting - not doing
